@@ -80,17 +80,17 @@ class EthereumService {
     }
   }
 
+  /// Initialize test provider.
+  /// This allow for read-only interaction with the blockchain.
   _initTestProvider() async {
     rpcProvider = JsonRpcProvider();
     final accts = await rpcProvider!.listAccounts();
     print('provider is:  $rpcProvider');
     print('network is: ${await rpcProvider!.getNetwork()}');
-    // _web3Provider= Web3Provider(rpcProvider);
-    // _web3Provider!.getSigner();
+
     if (accts.isNotEmpty) {
       print('accounts: $accts');
       currentAddress = accts.first;
-      // currentSigner = rpcProvider!.c;
     }
     _isLocal = true;
   }
@@ -110,7 +110,7 @@ class EthereumService {
     _clear();
   }
 
-  /// connect to provider via wallet (e.g. Metamask)
+  /// Connect to [provider] via wallet (e.g. Metamask)
   _connectProvider() async {
     print('connecting provider');
     if (Ethereum.isSupported) {
@@ -135,13 +135,13 @@ class EthereumService {
     }
   }
 
-  /// get latest block
+  /// Get latest block.
   getLastestBlock() async {
     print(await _web3Provider!.getLastestBlock());
     print(await _web3Provider!.getLastestBlockWithTransaction());
   }
 
-  /// convert taskcreatedd event to Task
+  /// Convert [taskCreated] event to [Task].
   ///
   List<Task> _taskListFromEvent(List<dynamic> event) {
     print('converting fetched task to Task');
@@ -161,7 +161,7 @@ class EthereumService {
         .toList();
   }
 
-  /// fetch all task
+  /// Fetch all [Task].
   ///
   void fetchAllTask() async {
     try {
@@ -178,7 +178,7 @@ class EthereumService {
     }
   }
 
-  /// Create task
+  /// Create a new [Task].
   ///
   createTask({required String content, required String author}) async {
     try {
@@ -192,7 +192,7 @@ class EthereumService {
     }
   }
 
-  /// Toggle check
+  /// Toggle check on existing [Task].
   ///
   toggleCheck({required int id}) async {
     try {
@@ -206,22 +206,24 @@ class EthereumService {
     }
   }
 
-  /// subscribe to task created event
+  /// Subscribe to [taskCreated] event.
   void _subscribeToTaskCreatedEvent() {
     print('subscribe To TaskCreated Event');
 
     todo.on('taskCreated', (id, date, content, author, checked, event) async {
-      final Task newTask = Task(
-        id: int.parse(id.toString()),
-        date: DateTime.fromMillisecondsSinceEpoch(
-            int.parse(date.toString()) * 1000),
-        content: content as String,
-        author: author as String,
-        checked: checked as bool,
-        checkedDate: null,
-      );
+      final receivedList = [id, date, content, author, checked];
+      final newTask = _taskListFromEvent(receivedList);
+      // final Task newTask = Task(
+      //   id: int.parse(id.toString()),
+      //   date: DateTime.fromMillisecondsSinceEpoch(
+      //       int.parse(date.toString()) * 1000),
+      //   content: content as String,
+      //   author: author as String,
+      //   checked: checked as bool,
+      //   checkedDate: null,
+      // );
 
-      bool didUpdate = await updateTaskList(createdTask: newTask);
+      bool didUpdate = await updateTaskList(createdTask: newTask.first);
       if (didUpdate) {
         print('adding to controller');
         _taskListController.add(List.from(taskList));
@@ -229,7 +231,13 @@ class EthereumService {
     });
   }
 
-  // /// subscribe to check toggle event
+  /// Get event in the last 50 blocks.
+  querychain() async {
+    final filter = todo.getFilter('taskCreated');
+    await todo.queryFilter(filter, -50);
+  }
+
+  /// Subscribe to [checkToggled] event.
   void _subscribeToCheckToggledEvent() {
     print('subscribe to check toggle event');
 
@@ -269,7 +277,6 @@ class EthereumService {
 
   /// Send funds to address
   ///
-
   void sendFunds() async {
     print('sending funds. to metamask addr?: $_isMetamask');
     try {
@@ -291,7 +298,7 @@ class EthereumService {
     }
   }
 
-  /// update tasklist
+  /// Update [taskList].
 
   Future<bool> updateTaskList({Task? createdTask, CheckStatus? newStatus}) {
     print(

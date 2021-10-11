@@ -1,5 +1,8 @@
 // // ignore_for_file: avoid_print
 
+/// The web3dart package has not yet fully implemente the metamask support. 
+
+
 // import 'dart:async';
 // // import 'dart:convert';
 // import 'dart:html';
