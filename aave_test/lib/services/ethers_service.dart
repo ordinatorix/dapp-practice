@@ -37,8 +37,8 @@ class EthereumService {
     await contractSetup();
     await getBalance();
     await getLatestBlock();
-    await queryEventBlockWithFilter();
-    await getUserAccountData();
+    await queryEventBlockWithFilter(fromBlock: 27669332, toBlock: 27669334);
+    await getUserAccountData(address: _currentSignerAddress);
     _listenForBorrowEvents();
   }
 
@@ -141,16 +141,17 @@ class EthereumService {
     }
   }
 
-  /// query block for borrow events on specified block range
+  /// query block for borrow events on specified block range.
+  /// If range is not specified, returns the latest block
   ///
-  Future<void> queryEventBlockWithFilter() async {
+  Future<void> queryEventBlockWithFilter({int? fromBlock, int? toBlock}) async {
     print('getting querying block with filter');
     try {
       final filter = EventFilter(address: _lendingPoolProxyAddress);
       final List<Event> events = await _proxyContract.queryFilter(
         filter,
-        27669332,
-        27669334,
+        fromBlock,
+        toBlock,
       );
       final List decoded = EthUtils.defaultAbiCoder
           .decode(["address", "uint256", "uint256", "uint256"], events[1].data);
@@ -162,17 +163,46 @@ class EthereumService {
 
   /// get user account data from aave.
   ///
-  Future<void> getUserAccountData() async {
+  Future<void> getUserAccountData({required String address}) async {
     print('getting user accnt data');
-    final String data = _lendingPoolIface
-        .encodeFunctionData("getUserAccountData", [_currentSignerAddress]);
-    final TransactionRequest txRequest =
-        TransactionRequest(to: _lendingPoolProxyAddress, data: data);
-    String callTx = await _web3Provider.getSigner().call(txRequest);
+    try {
+      final String data =
+          _lendingPoolIface.encodeFunctionData("getUserAccountData", [address]);
+      final TransactionRequest txRequest =
+          TransactionRequest(to: _lendingPoolProxyAddress, data: data);
+      String callTx = await _web3Provider.getSigner().call(txRequest);
+
+      AaveUserAccountData userAccntData = _decodeUserAccountData(callTx);
+      print('callTx:\n $userAccntData');
+    } catch (e) {
+      print('error is: $e');
+    }
+  }
+
+  /// listen for borrow events emitted by AaVe
+  ///
+  void _listenForBorrowEvents() {
+    print('listenning for event');
+
+    String eventHash = _lendingPoolIface.getEventTopic("Borrow");
+
+    var filter = EventFilter(topics: [eventHash]); // filter event based on hash
+
+    _web3Provider.onFilter(filter, (event) {
+      Event resultingEvent = Event.fromJS(event);
+
+      AaveBorrowEvent borrowEvent = _decodeBorrowEvent(resultingEvent);
+
+      print(borrowEvent);
+    });
+  }
+
+  /// Decode user account data.
+  AaveUserAccountData _decodeUserAccountData(String callTx) {
     List decodedRes =
         _lendingPoolIface.decodeFunctionResult("getUserAccountData", callTx);
 
-    var userAccntData = AaveUserAccountData(
+    AaveUserAccountData userAccntData = AaveUserAccountData(
         totalCollateralEth:
             double.parse(EthUtils.formatEther(decodedRes[0].toString())),
         totalDebtETH:
@@ -184,37 +214,23 @@ class EthereumService {
         ltv: double.parse(EthUtils.formatUnits(decodedRes[4].toString(), 2)),
         healthFactor:
             double.parse(EthUtils.formatEther(decodedRes[5].toString())));
-    print('callTx:\n $userAccntData');
+    return userAccntData;
   }
 
-  /// listen for borrow events emitted by AaVe
-  ///
-  void _listenForBorrowEvents() {
-    print('listenning forevent');
-    String eventHash = _lendingPoolIface.getEventTopic("Borrow");
-    var filter = EventFilter(topics: [eventHash]);
-    _web3Provider.onFilter(filter, (event) {
-      var resultingEvent = Event.fromJS(event);
-      print(resultingEvent.data);
-      print(resultingEvent.topics);
-      var decodedReserve = EthUtils.defaultAbiCoder
-          .decode(["address"], resultingEvent.topics[1]);
-      var decodedOnBehalf = EthUtils.defaultAbiCoder
-          .decode(["address"], resultingEvent.topics[2]);
-      print('decodedOnBehalf: $decodedOnBehalf');
-      var decodedReferral =
-          EthUtils.defaultAbiCoder.decode(["uint16"], resultingEvent.topics[3]);
-      print('decodedReferral: $decodedReferral');
-      var decodedData = EthUtils.defaultAbiCoder.decode(
-          ["address", "uint256", "uint256", "uint256"], resultingEvent.data);
-      var borrowEvent = AaveBorrowEvent(
-        userAddress: decodedData[0].toString(),
-        reserve: decodedReserve[0].toString(),
-        amount: double.parse(EthUtils.formatEther(decodedData[1].toString())),
-        borrowRateMode: double.parse(decodedData[2].toString()),
-        borrowRate: double.parse(decodedData[3].toString()),
-      );
-      print(borrowEvent);
-    });
+  /// Decode borrow event
+  AaveBorrowEvent _decodeBorrowEvent(Event resultingEvent) {
+    var decodedReserve =
+        EthUtils.defaultAbiCoder.decode(["address"], resultingEvent.topics[1]);
+
+    var decodedData = EthUtils.defaultAbiCoder.decode(
+        ["address", "uint256", "uint256", "uint256"], resultingEvent.data);
+    AaveBorrowEvent borrowEvent = AaveBorrowEvent(
+      userAddress: decodedData[0].toString(),
+      reserve: decodedReserve[0].toString(),
+      amount: double.parse(EthUtils.formatEther(decodedData[1].toString())),
+      borrowRateMode: double.parse(decodedData[2].toString()),
+      borrowRate: double.parse(decodedData[3].toString()),
+    );
+    return borrowEvent;
   }
 }
