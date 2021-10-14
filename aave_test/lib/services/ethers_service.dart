@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 
+import 'package:aave_test/model/aave_borrow_event.dart';
 import 'package:aave_test/model/aave_user_account_data.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_web3/flutter_web3.dart';
@@ -170,7 +171,7 @@ class EthereumService {
     String callTx = await _web3Provider.getSigner().call(txRequest);
     List decodedRes =
         _lendingPoolIface.decodeFunctionResult("getUserAccountData", callTx);
-    EthUtils.formatEther(decodedRes[0].toString());
+
     var userAccntData = AaveUserAccountData(
         totalCollateralEth:
             double.parse(EthUtils.formatEther(decodedRes[0].toString())),
@@ -190,10 +191,30 @@ class EthereumService {
   ///
   void _listenForBorrowEvents() {
     print('listenning forevent');
-// _web3Provider.getf
-    var filter = _proxyContract.getFilter("Borrow");
-    _proxyContract.on(filter, (res) {
-      print(res);
+    String eventHash = _lendingPoolIface.getEventTopic("Borrow");
+    var filter = EventFilter(topics: [eventHash]);
+    _web3Provider.onFilter(filter, (event) {
+      var resultingEvent = Event.fromJS(event);
+      print(resultingEvent.data);
+      print(resultingEvent.topics);
+      var decodedReserve = EthUtils.defaultAbiCoder
+          .decode(["address"], resultingEvent.topics[1]);
+      var decodedOnBehalf = EthUtils.defaultAbiCoder
+          .decode(["address"], resultingEvent.topics[2]);
+      print('decodedOnBehalf: $decodedOnBehalf');
+      var decodedReferral =
+          EthUtils.defaultAbiCoder.decode(["uint16"], resultingEvent.topics[3]);
+      print('decodedReferral: $decodedReferral');
+      var decodedData = EthUtils.defaultAbiCoder.decode(
+          ["address", "uint256", "uint256", "uint256"], resultingEvent.data);
+      var borrowEvent = AaveBorrowEvent(
+        userAddress: decodedData[0].toString(),
+        reserve: decodedReserve[0].toString(),
+        amount: double.parse(EthUtils.formatEther(decodedData[1].toString())),
+        borrowRateMode: double.parse(decodedData[2].toString()),
+        borrowRate: double.parse(decodedData[3].toString()),
+      );
+      print(borrowEvent);
     });
   }
 }
