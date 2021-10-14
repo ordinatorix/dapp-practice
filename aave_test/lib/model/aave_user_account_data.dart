@@ -15,6 +15,6 @@ class AaveUserAccountData {
   });
   @override
   String toString() {
-    return 'totalCollateralEth: $totalCollateralEth, totalDebtETH: $totalDebtETH, availableBorrowsETH: $availableBorrowsETH; currentLiquidationThreshold: $currentLiquidationThreshold; max ltv: $ltv; healthFactor: $healthFactor;  ';
+    return 'totalCollateralEth: $totalCollateralEth;\n totalDebtETH: $totalDebtETH;\n availableBorrowsETH: $availableBorrowsETH;\n currentLiquidationThreshold: $currentLiquidationThreshold;\n max ltv: $ltv;\n healthFactor: $healthFactor;  ';
   }
 }
