@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:aave_test/model/aave_borrow_event.dart';
+import 'package:aave_test/model/aave_deposit_event.dart';
 import 'package:aave_test/model/aave_user_account_data.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_web3/flutter_web3.dart';
@@ -12,10 +13,10 @@ class EthereumService {
   EthereumService() {
     _initEthService();
   }
-
+  List tempList = [];
   late Web3Provider _web3Provider;
   late String _currentSignerAddress;
-  late String _currentChain;
+  // late String _currentChain;
   late Signer _currentSigner;
   late bool _isMetaMask;
 
@@ -37,9 +38,14 @@ class EthereumService {
     await contractSetup();
     await getBalance();
     await getLatestBlock();
-    await queryEventBlockWithFilter(fromBlock: 27669332, toBlock: 27669334);
-    await getUserAccountData(address: _currentSignerAddress);
-    _listenForBorrowEvents();
+    await queryEventsByContractAddress(
+        contractAddress: _lendingPoolProxyAddress,
+        fromBlock: 27669332,
+        toBlock: 27669334);
+    await queryBorrowEvents(contractAddress: _lendingPoolProxyAddress);
+    // await queryDepositEvent(contractAddress: _lendingPoolProxyAddress);
+    // await getUserAccountData(address: _currentSignerAddress);
+    // _listenForBorrowEvents();
   }
 
   /// get abi code from file.
@@ -141,13 +147,14 @@ class EthereumService {
     }
   }
 
-  /// query block for borrow events on specified block range.
+  /// Query blocks for [Event] emitted by [contractAddress] for a specified block range.
   /// If range is not specified, returns the latest block
   ///
-  Future<void> queryEventBlockWithFilter({int? fromBlock, int? toBlock}) async {
-    print('getting querying block with filter');
+  Future<void> queryEventsByContractAddress(
+      {required String contractAddress, int? fromBlock, int? toBlock}) async {
+    print('Querying block with address filter');
     try {
-      final filter = EventFilter(address: _lendingPoolProxyAddress);
+      final filter = EventFilter(address: contractAddress);
       final List<Event> events = await _proxyContract.queryFilter(
         filter,
         fromBlock,
@@ -156,6 +163,57 @@ class EthereumService {
       final List decoded = EthUtils.defaultAbiCoder
           .decode(["address", "uint256", "uint256", "uint256"], events[1].data);
       print('decoded event data: $decoded');
+    } catch (e) {
+      print('error is: $e');
+    }
+  }
+
+  /// Query blocks for borrow [Event] emitted by [contractAddress] for a specified block range.
+  /// If range is not specified, returns the latest block
+  ///
+  Future<void> queryBorrowEvents(
+      {required String contractAddress, int? fromBlock, int? toBlock}) async {
+    print('Querying borrow events');
+    try {
+      final String topicHash = _lendingPoolIface.getEventTopic("Borrow");
+      final filter = EventFilter(address: contractAddress, topics: [topicHash]);
+      final List<Event> borrowEvents = await _proxyContract.queryFilter(
+        filter, -100,
+        // fromBlock,
+        // toBlock,
+      );
+      print(borrowEvents);
+      borrowEvents.map((e) => _decodeBorrowEvent(e));
+
+      // var decoded = _decodeBorrowEvent(borrowEvents[0]);
+      // print('decoded event data: $decoded');
+    } catch (e) {
+      print('error is: $e');
+    }
+  }
+
+  /// Query block for Deposit [Event] emitted by [contractAddress] on specified block range.
+  /// If range is not specified, returns the latest block
+  ///
+  Future<void> queryDepositEvent(
+      {required String contractAddress, int? fromBlock, int? toBlock}) async {
+    print('Querying deposit event');
+    try {
+      final String topicHash = _lendingPoolIface.getEventTopic("Deposit");
+      final filter =
+          EventFilter(address: _lendingPoolProxyAddress, topics: [topicHash]);
+      final List<Event> depositEvents = await _proxyContract.queryFilter(
+        filter,
+        fromBlock,
+        toBlock,
+      );
+      depositEvents.map((e) {
+        print(_decodeDepositEvent);
+      });
+
+      // var decoded = _decodeDepositEvent(depositEvents[0]);
+
+      // print('decoded deposit event: $decoded');
     } catch (e) {
       print('error is: $e');
     }
@@ -199,6 +257,7 @@ class EthereumService {
 
   /// Decode user account data.
   AaveUserAccountData _decodeUserAccountData(String callTx) {
+    print('decoding user account data');
     List decodedRes =
         _lendingPoolIface.decodeFunctionResult("getUserAccountData", callTx);
 
@@ -219,6 +278,7 @@ class EthereumService {
 
   /// Decode borrow event
   AaveBorrowEvent _decodeBorrowEvent(Event resultingEvent) {
+    print('decoding borrow event');
     var decodedReserve =
         EthUtils.defaultAbiCoder.decode(["address"], resultingEvent.topics[1]);
 
@@ -231,6 +291,23 @@ class EthereumService {
       borrowRateMode: double.parse(decodedData[2].toString()),
       borrowRate: double.parse(decodedData[3].toString()),
     );
+    print('decoded borrow event: $borrowEvent');
     return borrowEvent;
+  }
+
+  /// Decode borrow event
+  AaveDepositEvent _decodeDepositEvent(Event resultingEvent) {
+    print('decoding deposit event');
+    var decodedReserve =
+        EthUtils.defaultAbiCoder.decode(["address"], resultingEvent.topics[1]);
+
+    var decodedData = EthUtils.defaultAbiCoder
+        .decode(["address", "uint256"], resultingEvent.data);
+    AaveDepositEvent depositEvent = AaveDepositEvent(
+      user: decodedData[0].toString(),
+      reserve: decodedReserve[0].toString(),
+      amount: double.parse(EthUtils.formatEther(decodedData[1].toString())),
+    );
+    return depositEvent;
   }
 }
